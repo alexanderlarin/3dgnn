@@ -24,7 +24,7 @@ torch.backends.cudnn.benchmark = True
 logger = logging.getLogger('3dgnn')
 
 
-def train_nn(save_models_dir, num_epochs=50, batch_size=4, pre_train_model=''):
+def train_nn(dataset_path, hha_dir, save_models_dir, num_epochs=50, batch_size=4, pre_train_model=''):
     logger.info('Loading data...')
 
     label_to_idx = {'<UNK>': 0, 'beam': 1, 'board': 2, 'bookcase': 3, 'ceiling': 4, 'chair': 5, 'clutter': 6,
@@ -35,11 +35,11 @@ def train_nn(save_models_dir, num_epochs=50, batch_size=4, pre_train_model=''):
                     7: 'column',
                     8: 'door', 9: 'floor', 10: 'sofa', 11: 'table', 12: 'wall', 13: 'window'}
 
-    dataset_tr = nyudv2.Dataset(flip_prob=config.flip_prob, crop_type='Random', crop_size=config.crop_size)
+    dataset_tr = nyudv2.Dataset(dataset_path, hha_dir, flip_prob=config.flip_prob, crop_type='Random', crop_size=config.crop_size)
     dataloader_tr = DataLoader(dataset_tr, batch_size=batch_size, shuffle=True,
                                num_workers=config.workers_tr, drop_last=False, pin_memory=True)
 
-    dataset_va = nyudv2.Dataset(flip_prob=0.0, crop_type='Center', crop_size=config.crop_size)
+    dataset_va = nyudv2.Dataset(dataset_path, hha_dir, flip_prob=0.0, crop_type='Center', crop_size=config.crop_size)
     dataloader_va = DataLoader(dataset_va, batch_size=batch_size, shuffle=False,
                                num_workers=config.workers_va, drop_last=False, pin_memory=True)
 

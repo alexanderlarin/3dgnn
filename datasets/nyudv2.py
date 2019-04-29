@@ -8,13 +8,8 @@ from torch.utils.data import Dataset
 logger = logging.getLogger('data')
 
 
-DATA_DIR = 'datasets/data'
-HHA_DIR = os.path.join(DATA_DIR, 'hha')
-DATASET_FILENAME = os.path.join(DATA_DIR, 'nyu_depth_v2_labeled.mat')
-
-
 class Dataset(Dataset):
-    def __init__(self, flip_prob=None, crop_type=None, crop_size=0):
+    def __init__(self, dataset_path, hha_dir, flip_prob=None, crop_type=None, crop_size=0):
 
         self.flip_prob = flip_prob
         self.crop_type = crop_type
@@ -22,16 +17,16 @@ class Dataset(Dataset):
 
         # read mat file
         logger.info('Reading .mat file...')
-        with h5py.File(DATASET_FILENAME) as data_file:
+        with h5py.File(dataset_path) as data_file:
             self.rgb_images = np.transpose(data_file['images'], [0, 2, 3, 1]).astype(np.float32)
             self.label_images = np.array(data_file['labels'])
         logger.info('Reading hha images...')
         self.hha_images = np.zeros_like(self.rgb_images)
-        for _, _, filenames in os.walk(HHA_DIR):
+        for _, _, filenames in os.walk(hha_dir):
             for filename in sorted(filenames):
                 name, ext = os.path.splitext(filename)
                 idx = int(name) - 1
-                self.rgb_images[idx] = np.transpose(cv2.imread(os.path.join(HHA_DIR, filename), cv2.COLOR_BGR2RGB), [1, 0, 2])
+                self.rgb_images[idx] = np.transpose(cv2.imread(os.path.join(hha_dir, filename), cv2.COLOR_BGR2RGB), [1, 0, 2])
         logger.info('Reading data completed')
 
     def __len__(self):
