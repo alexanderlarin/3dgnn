@@ -49,7 +49,7 @@ def extract_hha(dataset_filename, hha_dir, color_camera_matrix=None, mp_workers=
                 for start_chunk_idx in range(start_idx, depth_count, mp_chunk_size):
                     end_chunk_idx = start_chunk_idx + mp_chunk_size - 1
                     depth_images = data_file['depths'][start_chunk_idx:end_chunk_idx, :]
-                    hha_filenames = (os.path.join(hha_dir, f'{idx}.png')
+                    hha_filenames = (os.path.join(hha_dir, f'{idx + 1}.png')
                                      for idx in range(start_chunk_idx, end_chunk_idx))
                     pool.starmap(export_hha, zip(depth_images, hha_filenames,
                                                  repeat(color_camera_matrix, end_chunk_idx - start_chunk_idx)))

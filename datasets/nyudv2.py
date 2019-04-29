@@ -1,11 +1,8 @@
 import os
 import cv2
 import h5py
-import logging
 import numpy as np
 from torch.utils.data import Dataset
-
-logger = logging.getLogger('data')
 
 
 class Dataset(Dataset):
@@ -24,9 +21,8 @@ class Dataset(Dataset):
         return self.rgb_images_frame.shape[0]
 
     def __getitem__(self, idx):
-        logger.info(f'Query data index={idx}')
         rgb = np.transpose(self.rgb_images_frame[idx], [1, 2, 0]).astype(np.float32)
-        hha = np.transpose(cv2.imread(os.path.join(self.hha_dir, f'{idx}.png'), cv2.COLOR_BGR2RGB), [1, 0, 2])
+        hha = np.transpose(cv2.imread(os.path.join(self.hha_dir, f'{idx + 1}.png'), cv2.COLOR_BGR2RGB), [1, 0, 2])
         rgb_hha = np.concatenate([rgb, hha], axis=2).astype(np.float32)
         label = self.label_images_frame[idx].astype(np.float32)
         label[label >= 14] = 0
