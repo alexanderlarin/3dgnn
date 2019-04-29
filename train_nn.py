@@ -12,7 +12,7 @@ import torch.nn as nn
 import torch.optim
 
 from torch.utils.data import DataLoader
-from tqdm import tqdm
+from tqdm import tqdm_notebook as tqdm
 
 import config
 from datasets import nyudv2
