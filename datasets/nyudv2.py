@@ -15,28 +15,20 @@ class Dataset(Dataset):
         self.crop_type = crop_type
         self.crop_size = crop_size
 
-        # read mat file
-        logger.info('Reading .mat file...')
-        with h5py.File(dataset_path) as data_file:
-            self.rgb_images = np.transpose(data_file['images'], [0, 2, 3, 1]).astype(np.float32)
-            self.label_images = np.array(data_file['labels'])
-        logger.info('Reading hha images...')
-        self.hha_images = np.zeros_like(self.rgb_images)
-        for _, _, filenames in os.walk(hha_dir):
-            for filename in sorted(filenames):
-                name, ext = os.path.splitext(filename)
-                idx = int(name) - 1
-                self.rgb_images[idx] = np.transpose(cv2.imread(os.path.join(hha_dir, filename), cv2.COLOR_BGR2RGB), [1, 0, 2])
-        logger.info('Reading data completed')
+        self.hha_dir = hha_dir
+        self.data_file = h5py.File(dataset_path)
+        self.rgb_images_frame = self.data_file['images']
+        self.label_images_frame = self.data_file['labels']
 
     def __len__(self):
-        return self.rgb_images.shape[0]
+        return self.rgb_images_frame.shape[0]
 
     def __getitem__(self, idx):
-        rgb = self.rgb_images[idx]
-        hha = self.hha_images[idx]
+        logger.info(f'Query data index={idx}')
+        rgb = np.transpose(self.rgb_images_frame[idx], [1, 2, 0]).astype(np.float32)
+        hha = np.transpose(cv2.imread(os.path.join(self.hha_dir, f'{idx}.png'), cv2.COLOR_BGR2RGB), [1, 0, 2])
         rgb_hha = np.concatenate([rgb, hha], axis=2).astype(np.float32)
-        label = self.label_images[idx].astype(np.float32)
+        label = self.label_images_frame[idx].astype(np.float32)
         label[label >= 14] = 0
         xy = np.zeros_like(rgb)[:, :, 0:2].astype(np.float32)
 
