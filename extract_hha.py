@@ -56,9 +56,3 @@ def extract_hha(dataset_filename, hha_dir, color_camera_matrix=None, mp_workers=
                     logger.info(f'HHA converted [{end_chunk_idx + 1}/{depth_count}]')
 
         logger.info(f'HHA converting successfully completed')
-
-
-if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO, format='[%(levelname)s][%(asctime)s] %(message)s', datefmt='%H:%M:%S')
-    # TODO: parse args
-    extract_hha('datasets/data/nyu_depth_v2_labeled.mat', 'datasets/data/hha')
