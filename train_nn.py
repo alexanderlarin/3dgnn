@@ -12,7 +12,7 @@ import torch.nn as nn
 import torch.optim
 
 from torch.utils.data import DataLoader
-from tqdm import tqdm_notebook as tqdm
+from tqdm import tqdm, tqdm_notebook
 
 import config
 from datasets import nyudv2
@@ -23,17 +23,17 @@ torch.backends.cudnn.benchmark = True
 
 logger = logging.getLogger('3dgnn')
 
+LABEL_IDX = {'<UNK>': 0, 'beam': 1, 'board': 2, 'bookcase': 3, 'ceiling': 4, 'chair': 5, 'clutter': 6,
+             'column': 7, 'door': 8, 'floor': 9, 'sofa': 10, 'table': 11, 'wall': 12, 'window': 13}
 
-def train_nn(dataset_path, hha_dir, save_models_dir, num_epochs=50, batch_size=4, pre_train_model=''):
+IDX_LABEL = {0: '<UNK>', 1: 'beam', 2: 'board', 3: 'bookcase', 4: 'ceiling', 5: 'chair', 6: 'clutter',
+             7: 'column', 8: 'door', 9: 'floor', 10: 'sofa', 11: 'table', 12: 'wall', 13: 'window'}
+
+
+def train_nn(dataset_path, hha_dir, save_models_dir, num_epochs=50, batch_size=4,
+             start_epoch=1, pre_train_model='', notebook=False):
+    progress = tqdm_notebook if notebook else tqdm
     logger.info('Loading data...')
-
-    label_to_idx = {'<UNK>': 0, 'beam': 1, 'board': 2, 'bookcase': 3, 'ceiling': 4, 'chair': 5, 'clutter': 6,
-                    'column': 7,
-                    'door': 8, 'floor': 9, 'sofa': 10, 'table': 11, 'wall': 12, 'window': 13}
-
-    idx_to_label = {0: '<UNK>', 1: 'beam', 2: 'board', 3: 'bookcase', 4: 'ceiling', 5: 'chair', 6: 'clutter',
-                    7: 'column',
-                    8: 'door', 9: 'floor', 10: 'sofa', 11: 'table', 12: 'wall', 13: 'window'}
 
     dataset_tr = nyudv2.Dataset(dataset_path, hha_dir, flip_prob=config.flip_prob, crop_type='Random', crop_size=config.crop_size)
     dataloader_tr = DataLoader(dataset_tr, batch_size=batch_size, shuffle=True,
@@ -96,8 +96,7 @@ def train_nn(dataset_path, hha_dir, save_models_dir, num_epochs=50, batch_size=4
 
             start_time = time.time()
 
-            for batch_idx, rgbd_label_xy in tqdm(enumerate(dataloader), total=len(dataloader), smoothing=0.9):
-                logger.info('Next batch')
+            for batch_idx, rgbd_label_xy in progress(enumerate(dataloader), total=len(dataloader), desc=f'Eval set'):
                 x = rgbd_label_xy[0]
                 xy = rgbd_label_xy[2]
                 target = rgbd_label_xy[1].long()
@@ -160,11 +159,12 @@ def train_nn(dataset_path, hha_dir, save_models_dir, num_epochs=50, batch_size=4
         logger.info('Starting training from scratch...')
 
     # Training
-    for epoch in range(1, num_epochs + 1):
+    for epoch in progress(range(start_epoch, num_epochs + 1), desc='Training'):
         batch_loss_avg = 0
         if config.lr_schedule_type == 'exp':
             scheduler.step(epoch)
-        for batch_idx, rgbd_label_xy in tqdm(enumerate(dataloader_tr), total=len(dataloader_tr), smoothing=0.9):
+        for batch_idx, rgbd_label_xy in progress(enumerate(dataloader_tr), total=len(dataloader_tr),
+                                                 desc=f'Epoch {epoch}'):
             x = rgbd_label_xy[0]
             target = rgbd_label_xy[1].long()
             xy = rgbd_label_xy[2]
@@ -211,7 +211,7 @@ def train_nn(dataset_path, hha_dir, save_models_dir, num_epochs=50, batch_size=4
 
         torch.save(model.state_dict(), os.path.join(save_models_dir, f'checkpoint_{epoch!s}.pth'))
 
-        """Evaluation"""
+        # Evaluation
         eval_loss, class_iou, confusion_matrix = eval_set(dataloader_va)
         eval_losses.append(eval_loss)
 
@@ -227,20 +227,19 @@ def train_nn(dataset_path, hha_dir, save_models_dir, num_epochs=50, batch_size=4
         logger.info("E%dB%d Class IoU:", epoch, batch_idx)
         print('Epoch{} Class IoU:'.format(epoch))
         for cl in range(14):
-            logger.info("%+10s: %-10s" % (idx_to_label[cl], class_iou[cl]))
-            print('{}:{}'.format(idx_to_label[cl], class_iou[cl]))
+            logger.info("%+10s: %-10s" % (IDX_LABEL[cl], class_iou[cl]))
+            print('{}:{}'.format(IDX_LABEL[cl], class_iou[cl]))
         logger.info("Mean IoU: %s", np.mean(class_iou[1:]))
         print("Mean IoU: %.2f" % np.mean(class_iou[1:]))
         logger.info("E%dB%d Confusion matrix:", epoch, batch_idx)
         logger.info(confusion_matrix)
 
     logger.info('Finished training!')
-    logger.info("Saving model...")
-    print('Saving final model...')
+    logger.info('Saving trained model...')
     torch.save(model.state_dict(), os.path.join(save_models_dir, 'finish.pth'))
     eval_loss, class_iou, confusion_matrix = eval_set(dataloader_va)
-    logger.info("Eval loss: %s", eval_loss)
-    logger.info("Class IoU:")
+    logger.info('Eval loss: %s', eval_loss)
+    logger.info('Class IoU:')
     for cl in range(14):
-        logger.info("%+10s: %-10s" % (idx_to_label[cl], class_iou[cl]))
-    logger.info("Mean IoU: %s", np.mean(class_iou[1:]))
+        logger.info("%+10s: %-10s" % (IDX_LABEL[cl], class_iou[cl]))
+    logger.info(f'Mean IoU: {np.mean(class_iou[1:])}')
