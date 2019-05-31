@@ -29,9 +29,28 @@ LABEL_IDX = {'<UNK>': 0, 'beam': 1, 'board': 2, 'bookcase': 3, 'ceiling': 4, 'ch
 IDX_LABEL = {0: '<UNK>', 1: 'beam', 2: 'board', 3: 'bookcase', 4: 'ceiling', 5: 'chair', 6: 'clutter',
              7: 'column', 8: 'door', 9: 'floor', 10: 'sofa', 11: 'table', 12: 'wall', 13: 'window'}
 
+MODELS_EXT = '.pth'
+CHECK_POINT_SEP = '_'
+
+
+def find_last_check_point(models_dir, check_point_prefix):
+    check_point_idx = 0
+    for filename in os.listdir(models_dir):
+        if not os.path.isfile(os.path.join(models_dir, filename)):
+            continue
+        name, ext = os.path.splitext(filename)
+        name_parts = name.split(CHECK_POINT_SEP)
+        if ext == MODELS_EXT and name_parts[0] == check_point_prefix:
+            idx = int(name_parts[1])
+            check_point_idx = max(check_point_idx, idx)
+    if check_point_idx != 0:
+        return check_point_idx + 1, os.path.join(models_dir, f'{check_point_prefix}{CHECK_POINT_SEP}{check_point_idx!s}{MODELS_EXT}')
+    return 1, ''
+
 
 def train_nn(dataset_path, hha_dir, save_models_dir, num_epochs=50, batch_size=4,
-             start_epoch=1, pre_train_model='', notebook=False):
+             from_last_check_point=False, check_point_prefix='checkpoint',
+             start_epoch=0, pre_train_model='', notebook=False):
     progress = tqdm_notebook if notebook else tqdm
     logger.info('Loading data...')
 
@@ -42,6 +61,9 @@ def train_nn(dataset_path, hha_dir, save_models_dir, num_epochs=50, batch_size=4
     dataset_va = nyudv2.Dataset(dataset_path, hha_dir, flip_prob=0.0, crop_type='Center', crop_size=config.crop_size)
     dataloader_va = DataLoader(dataset_va, batch_size=batch_size, shuffle=False,
                                num_workers=config.workers_va, drop_last=False, pin_memory=True)
+
+    if from_last_check_point:
+        start_epoch, pre_train_model = find_last_check_point(save_models_dir, check_point_prefix)
 
     cv2.setNumThreads(config.workers_tr)
 
@@ -153,7 +175,7 @@ def train_nn(dataset_path, hha_dir, save_models_dir, num_epochs=50, batch_size=4
     eval_losses = []
 
     if pre_train_model:
-        logger.info('Loading pre-train model...')
+        logger.info(f'Loading pre-train model {pre_train_model}... ')
         model.load_state_dict(torch.load(pre_train_model))
     else:
         logger.info('Starting training from scratch...')
@@ -209,7 +231,8 @@ def train_nn(dataset_path, hha_dir, save_models_dir, num_epochs=50, batch_size=4
         batch_idx = len(dataloader_tr)
         logger.info("E%dB%d Saving model...", epoch, batch_idx)
 
-        torch.save(model.state_dict(), os.path.join(save_models_dir, f'checkpoint_{epoch!s}.pth'))
+        torch.save(model.state_dict(),
+                   os.path.join(save_models_dir, f'{check_point_prefix}{CHECK_POINT_SEP}{epoch!s}{MODELS_EXT}'))
 
         # Evaluation
         eval_loss, class_iou, confusion_matrix = eval_set(dataloader_va)
@@ -236,7 +259,7 @@ def train_nn(dataset_path, hha_dir, save_models_dir, num_epochs=50, batch_size=4
 
     logger.info('Finished training!')
     logger.info('Saving trained model...')
-    torch.save(model.state_dict(), os.path.join(save_models_dir, 'finish.pth'))
+    torch.save(model.state_dict(), os.path.join(save_models_dir, f'finish{MODELS_EXT}'))
     eval_loss, class_iou, confusion_matrix = eval_set(dataloader_va)
     logger.info('Eval loss: %s', eval_loss)
     logger.info('Class IoU:')
