@@ -1,14 +1,18 @@
+import multiprocessing
+
 import cv2
 import h5py
 import numpy as np
 import logging
-import os
 from itertools import repeat
 from multiprocessing import Pool
 
 from hha import get_hha
 
 logger = logging.getLogger()
+
+
+CHANNELS_COUNT = 3
 
 
 def get_camera_matrix():
@@ -20,39 +24,48 @@ def get_camera_matrix():
     return np.array([[fx_rgb, 0, cx_rgb], [0, fy_rgb, cy_rgb], [0, 0, 1]])
 
 
-def export_hha(depth_image, hha_filename, color_camera_matrix):
-    hha = get_hha(color_camera_matrix, depth_image.T, depth_image.T)
-    cv2.imwrite(hha_filename, hha)
+def get_hha_rgb(depth_image, color_camera_matrix):
+    hha_bgr = get_hha(color_camera_matrix, depth_image.T, depth_image.T)
+    return cv2.cvtColor(hha_bgr, cv2.COLOR_BGR2RGB)
 
 
-def extract_hha(dataset_filename, hha_dir, color_camera_matrix=None, mp_workers=4, mp_chunk_size=16):
-    if not os.path.exists(dataset_filename):
-        logger.error(f'Labeled dataset {dataset_filename} not found')
-    else:
+def patch_hha_dataset(dataset_filename, patch_dataset_filename,
+                      color_camera_matrix=None, mp_workers=multiprocessing.cpu_count(), mp_chunk_size=16):
+    with h5py.File(dataset_filename, mode='r') as dataset_file, h5py.File(patch_dataset_filename) as patch_dataset_file:
+        depths = dataset_file['depths']
+        depths_count, width, height = depths.shape
+        logger.info(f'Labeled dataset {dataset_filename} loaded')
+        logger.info(f'Depth images count={depths_count}')
+
+        try:
+            hha_images = patch_dataset_file.require_dataset('hha_images',
+                                                            shape=(0, CHANNELS_COUNT, width, height),
+                                                            maxshape=(depths_count, CHANNELS_COUNT, width, height),
+                                                            dtype=np.uint8, chunks=True)
+        except TypeError:
+            hha_images = patch_dataset_file['hha_images']
+
+        start_idx = hha_images.shape[0]
+        logger.warning(f'{patch_dataset_filename} dataset has pre-generated HHA images, continue from {start_idx}')
+
         if color_camera_matrix is None:
             color_camera_matrix = get_camera_matrix()
-        with h5py.File(dataset_filename) as data_file:
-            logger.info(f'Labeled dataset {dataset_filename} loaded')
-            depth_count = data_file['depths'].shape[0]
-            logger.info(f'Depth images count={depth_count}')
-            if not os.path.exists(hha_dir) or not os.path.isdir(hha_dir):
-                os.mkdir(hha_dir)
-                logger.warning(f'HHA dir is not exists, created dir="{hha_dir}"')
-            start_idx = 0
-            for _, _, filenames in os.walk(hha_dir):
-                for filename in sorted(filenames):
-                    name, ext = os.path.splitext(filename)
-                    start_idx = max(start_idx, int(name))
-            if start_idx != 0:
-                logger.warning(f'HHA files dir is not empty, continue from [{start_idx + 1}]')
-            with Pool(mp_workers) as pool:
-                for start_chunk_idx in range(start_idx, depth_count, mp_chunk_size):
-                    end_chunk_idx = start_chunk_idx + mp_chunk_size - 1
-                    depth_images = data_file['depths'][start_chunk_idx:end_chunk_idx, :]
-                    hha_filenames = (os.path.join(hha_dir, f'{idx + 1}.png')
-                                     for idx in range(start_chunk_idx, end_chunk_idx))
-                    pool.starmap(export_hha, zip(depth_images, hha_filenames,
-                                                 repeat(color_camera_matrix, end_chunk_idx - start_chunk_idx)))
-                    logger.info(f'HHA converted [{end_chunk_idx + 1}/{depth_count}]')
+            logger.warning(f'no camera matrix passed, use DEFAULT:')
+            logger.warning(color_camera_matrix)
 
-        logger.info(f'HHA converting successfully completed')
+        with Pool(mp_workers) as pool:
+            for start_chunk_idx in range(start_idx, depths_count, mp_chunk_size):
+                depth_images = depths[start_chunk_idx:start_chunk_idx + mp_chunk_size, :]
+                hha_images_chunk = pool.starmap(get_hha_rgb, zip(depth_images,
+                                                                 repeat(color_camera_matrix, mp_chunk_size)))
+                hha_images.resize(hha_images.shape[0] + len(hha_images_chunk), axis=0)
+                for offset, hha_image in enumerate(hha_images_chunk):
+                    hha_images[start_chunk_idx + offset] = np.transpose(hha_image, [2, 1, 0])
+                logger.info(f'HHA converted [{hha_images.shape[0]}/{depths_count}]')
+
+
+if __name__ == '__main__':
+    logging.basicConfig(level=logging.DEBUG)
+    patch_hha_dataset('datasets/data/nyu_depth_v2_labeled.mat',
+                      'datasets/data/nyu_depth_v2_patch.mat',
+                      mp_workers=2, mp_chunk_size=4)
