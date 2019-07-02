@@ -6,6 +6,7 @@ import numpy as np
 import logging
 from itertools import repeat
 from multiprocessing import Pool
+from tqdm import tqdm
 
 from hha import get_hha
 
@@ -36,6 +37,7 @@ def patch_hha_dataset(dataset_filename, patch_dataset_filename,
         depths_count, width, height = depths.shape
         logger.info(f'Labeled dataset {dataset_filename} loaded')
         logger.info(f'Depth images count={depths_count}')
+        logger.info(f'Workers: {mp_workers}, Chunk: {mp_chunk_size}')
 
         try:
             hha_images = patch_dataset_file.require_dataset('hha_images',
@@ -50,10 +52,9 @@ def patch_hha_dataset(dataset_filename, patch_dataset_filename,
 
         if color_camera_matrix is None:
             color_camera_matrix = get_camera_matrix()
-            logger.warning(f'no camera matrix passed, use DEFAULT:')
-            logger.warning(color_camera_matrix)
+            logger.warning(f'no camera matrix passed, use DEFAULT:\n{color_camera_matrix}')
 
-        with Pool(mp_workers) as pool:
+        with Pool(mp_workers) as pool, tqdm(desc='HHA', initial=start_idx, total=depths_count) as progress_bar:
             for start_chunk_idx in range(start_idx, depths_count, mp_chunk_size):
                 depth_images = depths[start_chunk_idx:start_chunk_idx + mp_chunk_size, :]
                 hha_images_chunk = pool.starmap(get_hha_rgb, zip(depth_images,
@@ -61,7 +62,8 @@ def patch_hha_dataset(dataset_filename, patch_dataset_filename,
                 hha_images.resize(hha_images.shape[0] + len(hha_images_chunk), axis=0)
                 for offset, hha_image in enumerate(hha_images_chunk):
                     hha_images[start_chunk_idx + offset] = np.transpose(hha_image, [2, 1, 0])
-                logger.info(f'HHA converted [{hha_images.shape[0]}/{depths_count}]')
+                patch_dataset_file.flush()
+                progress_bar.update(mp_chunk_size)
 
 
 if __name__ == '__main__':
